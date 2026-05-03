@@ -36,7 +36,7 @@ static RNGameCenter *SharedInstance = nil;
 //  return (gcClass && osVersionSupported);
 //}
 
-@interface RNGameCenter ()
+@interface RNGameCenter () <GKGameCenterControllerDelegate>
 
 @property (nonatomic, strong) GKGameCenterViewController *gkView;
 @property (nonatomic, strong) UIViewController *reactNativeViewController;
@@ -1203,6 +1203,83 @@ RCT_EXPORT_METHOD(uploadSavedGameData:(NSDictionary *)options
  }];
  ...
  }*/
+
+/* -----------------------------------------------------------------------------------------------------------------------------------------
+ Methods merged from ios2
+ -----------------------------------------------------------------------------------------------------------------------------------------*/
+
+-(void)showLeaderboardAndAchievements:(BOOL)shouldShowLeaderboard{
+  UIViewController *mainController = [UIApplication sharedApplication].keyWindow.rootViewController;
+
+  GKGameCenterViewController *gcViewController = [[GKGameCenterViewController alloc] init];
+  gcViewController.gameCenterDelegate = self;
+
+  if (shouldShowLeaderboard) {
+    gcViewController.viewState = GKGameCenterViewControllerStateLeaderboards;
+    gcViewController.leaderboardIdentifier = _leaderboardIdentifier;
+  } else {
+    gcViewController.viewState = GKGameCenterViewControllerStateAchievements;
+  }
+
+  [mainController presentViewController:gcViewController animated:YES completion:nil];
+}
+
+RCT_EXPORT_METHOD(showLeaderBoard) {
+  if (_isGameCenterAvailable==NO) {
+    return;
+  }
+  [self showLeaderboardAndAchievements:YES];
+}
+
+RCT_EXPORT_METHOD(reportScore:(nonnull NSNumber *)newScore leaderboardIdentifier:(NSString *)leaderboardIdentifier)
+{
+  if (_isGameCenterAvailable==NO) {
+    return;
+  }
+
+  GKScore *score = [[GKScore alloc] initWithLeaderboardIdentifier:leaderboardIdentifier];
+  score.value = newScore.doubleValue;
+
+  [GKScore reportScores:@[score] withCompletionHandler:^(NSError *error) {
+    if (error != nil) {
+      NSLog(@"%@", [error localizedDescription]);
+    }
+  }];
+}
+
+RCT_EXPORT_METHOD(authenticateLocalPlayer:(RCTResponseSenderBlock)callback){
+  UIViewController *mainController = [UIApplication sharedApplication].keyWindow.rootViewController;
+
+  GKLocalPlayer *localPlayer = [GKLocalPlayer localPlayer];
+
+  __block Boolean called = false;
+
+  localPlayer.authenticateHandler = ^(UIViewController *viewController, NSError *error){
+    if (viewController != nil) {
+      [mainController presentViewController:viewController animated:YES completion:nil];
+    } else {
+      if ([GKLocalPlayer localPlayer].authenticated) {
+        _isGameCenterAvailable = YES;
+
+        [[GKLocalPlayer localPlayer] loadDefaultLeaderboardIdentifierWithCompletionHandler:^(NSString *leaderboardIdentifier, NSError *error) {
+          if (error != nil) {
+            NSLog(@"%@", [error localizedDescription]);
+          } else {
+            _leaderboardIdentifier = leaderboardIdentifier;
+          }
+        }];
+      } else {
+        _isGameCenterAvailable = NO;
+      }
+
+      if (!called && _isGameCenterAvailable) {
+        called = true;
+        callback(@[@{@"success": @(_isGameCenterAvailable)}]);
+      }
+    }
+  };
+}
+
 @end
 
 
