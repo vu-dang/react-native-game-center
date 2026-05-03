@@ -13,7 +13,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/garrettmac/react-native-game-center.git"
+    "url": "https://github.com/vu-dang/react-native-game-center.git"
   },
   "keywords": [
     "react",
@@ -28,17 +28,17 @@
     "gamecenter"
   ],
 
-  "author": "garrettmac <garrett@vyga.io> (http://vyga.io)",
+  "author": "vu-dang <garrett@vyga.io> (http://vyga.io)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/garrettmac/react-native-game-center/issues"
+    "url": "https://github.com/vu-dang/react-native-game-center/issues"
   },
   "config": {
     "commitizen": {
       "path": "node_modules/cz-conventional-changelog"
     }
   },
-  "homepage": "https://github.com/garrettmac/react-native-game-center#readme",
+  "homepage": "https://github.com/vu-dang/react-native-game-center#readme",
   "devDependencies": {
     "commitizen": "^2.9.6",
     "cz-conventional-changelog": "^2.0.0",
