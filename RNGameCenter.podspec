@@ -10,12 +10,9 @@ Pod::Spec.new do |s|
   s.license      = package['license']
   s.author       = package['author']
   s.source       = { :git => 'https://github.com/vu-dang/react-native-game-center.git' }
-  s.platform     = :ios, '9.0'
-  # point to the actual Obj-C sources inside the package
+  s.platform     = :ios, '13.0'
   s.source_files = 'RNGameCenter/ios/*.{h,m}'
   s.public_header_files = 'RNGameCenter/ios/*.h'
   s.requires_arc  = true
-  # dependency choice depends on RN version:
-  # use 'React' for RN < 0.60, use 'React-Core' for RN >= 0.60+
-  s.dependency 'React'
+  s.dependency 'React-Core'
 end

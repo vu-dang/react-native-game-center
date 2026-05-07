@@ -11,8 +11,8 @@ Pod::Spec.new do |s|
   s.license             = package['license']
   s.author              = package['author']
   s.source              = { :git => "https://github.com/vu-dang/RNGameCenter.git" }
-  s.platform            = :ios, "7.0"
+  s.platform            = :ios, "13.0"
   s.source_files        = "*.{h,m}"
   s.requires_arc        = true
-  s.dependency 'React'
+  s.dependency 'React-Core'
 end
