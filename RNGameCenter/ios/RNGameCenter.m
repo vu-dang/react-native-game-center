@@ -543,8 +543,11 @@ RCT_EXPORT_METHOD(authenticateLocalPlayer:(RCTResponseSenderBlock)callback) {
 #pragma clang diagnostic pop
             } else {
                 _isGameCenterAvailable = NO;
+                if (error != nil) NSLog(@"Game Center authentication failed: %@", [error localizedDescription]);
             }
-            if (!called && _isGameCenterAvailable) {
+            // Report the result once, on both success and failure, so the JS side
+            // can react to a failed sign-in instead of waiting forever.
+            if (!called) {
                 called = true;
                 callback(@[@{@"success": @(_isGameCenterAvailable)}]);
             }
