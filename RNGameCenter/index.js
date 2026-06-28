@@ -82,6 +82,15 @@ const RNGameCenter = {
     }
   },
 
+  reportScore: async (score, leaderboardIdentifier) => {
+    try {
+      return await NativeModules.RNGameCenter.reportScore(score, leaderboardIdentifier);
+    } catch (error) {
+      console.error('Error reporting score:', error);
+      throw error;
+    }
+  },
+
   // getLeaderboardPlayers:(options)=>{
   //
   //   //playerIds (Array)

@@ -502,15 +502,20 @@ RCT_EXPORT_METHOD(showLeaderBoard) {
     [self showLeaderboardAndAchievements:YES];
 }
 
-RCT_EXPORT_METHOD(reportScore:(nonnull NSNumber *)newScore leaderboardIdentifier:(NSString *)leaderboardIdentifier) {
-    if (_isGameCenterAvailable == NO) return;
+RCT_EXPORT_METHOD(reportScore:(nonnull NSNumber *)newScore leaderboardIdentifier:(NSString *)leaderboardIdentifier
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (_isGameCenterAvailable == NO) {
+        return reject(@"Error", @"Game Center is Unavailable", nil);
+    }
     if (@available(iOS 14.0, *)) {
         [GKLeaderboard submitScore:newScore.integerValue
                            context:0
                             player:[GKLocalPlayer localPlayer]
                     leaderboardIDs:@[leaderboardIdentifier]
                  completionHandler:^(NSError *error) {
-            if (error != nil) NSLog(@"%@", [error localizedDescription]);
+            if (error) reject(@"Error", @"Error submitting score", error);
+            else resolve(@"Successfully submitted score");
         }];
     } else {
 #pragma clang diagnostic push
@@ -518,7 +523,8 @@ RCT_EXPORT_METHOD(reportScore:(nonnull NSNumber *)newScore leaderboardIdentifier
         GKScore *score = [[GKScore alloc] initWithLeaderboardIdentifier:leaderboardIdentifier];
         score.value = newScore.doubleValue;
         [GKScore reportScores:@[score] withCompletionHandler:^(NSError *error) {
-            if (error != nil) NSLog(@"%@", [error localizedDescription]);
+            if (error) reject(@"Error", @"Error submitting score", error);
+            else resolve(@"Successfully submitted score");
         }];
 #pragma clang diagnostic pop
     }
