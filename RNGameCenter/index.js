@@ -82,6 +82,15 @@ const RNGameCenter = {
     }
   },
 
+  validateLeaderboardID: async leaderboardIdentifier => {
+    try {
+      return await NativeModules.RNGameCenter.validateLeaderboardID(leaderboardIdentifier);
+    } catch (error) {
+      console.error('Error validating leaderboard ID:', error);
+      throw error;
+    }
+  },
+
   reportScore: async (score, leaderboardIdentifier) => {
     try {
       return await NativeModules.RNGameCenter.reportScore(score, leaderboardIdentifier);

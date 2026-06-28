@@ -502,6 +502,28 @@ RCT_EXPORT_METHOD(showLeaderBoard) {
     [self showLeaderboardAndAchievements:YES];
 }
 
+RCT_EXPORT_METHOD(validateLeaderboardID:(NSString *)leaderboardIdentifier
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (_isGameCenterAvailable == NO) {
+        return reject(@"Error", @"Game Center is Unavailable", nil);
+    }
+    if (@available(iOS 14.0, *)) {
+        [GKLeaderboard loadLeaderboardsWithIDs:@[leaderboardIdentifier] completionHandler:^(NSArray<GKLeaderboard *> *leaderboards, NSError *error) {
+            if (error) {
+                reject(@"Error", @"Error validating leaderboard ID", error);
+            } else if (leaderboards.count == 0) {
+                reject(@"Error", [NSString stringWithFormat:@"Leaderboard ID not found: %@", leaderboardIdentifier], nil);
+            } else {
+                resolve(@{@"leaderboardIdentifier": leaderboardIdentifier, @"valid": @YES});
+            }
+        }];
+    } else {
+        // Pre-iOS 14: no side-effect-free validation API; assume valid.
+        resolve(@{@"leaderboardIdentifier": leaderboardIdentifier, @"valid": @YES});
+    }
+}
+
 RCT_EXPORT_METHOD(reportScore:(nonnull NSNumber *)newScore leaderboardIdentifier:(NSString *)leaderboardIdentifier
                   resolve:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject) {
