@@ -1,4 +1,8 @@
-import { NativeModules } from 'react-native';
+import { NativeModules, NativeEventEmitter } from 'react-native';
+
+// Lazy so merely importing this module on platforms without the native
+// module (e.g. Android) never throws.
+let _emitter = null;
 
 // const { RNGameCenter as ReactNativeGameCenter } = NativeModules;
 //standardizes the way options are validated
@@ -164,6 +168,48 @@ const RNGameCenter = {
       console.error('Error loading saved game data:', error);
       throw error;
     }
+  },
+
+  /* ---------------------------------------------------------------------
+   Realtime multiplayer (GKMatch)
+   Events: 'gc:matchFound' | 'gc:data' | 'gc:playerState' |
+           'gc:inviteAccepted' | 'gc:matchError'
+   --------------------------------------------------------------------- */
+
+  getEventEmitter: () => {
+    if (!_emitter) {
+      _emitter = new NativeEventEmitter(NativeModules.RNGameCenter);
+    }
+    return _emitter;
+  },
+
+  addEventListener: (event, handler) =>
+    RNGameCenter.getEventEmitter().addListener(event, handler),
+
+  getLocalPlayerID: async () => {
+    return await NativeModules.RNGameCenter.getLocalPlayerID();
+  },
+
+  // options: { minPlayers?: number, maxPlayers?: number, inviteMessage?: string }
+  // Resolves { players, expectedPlayerCount, localPlayerID } when a match is found.
+  presentMatchmaker: async (options = {}) => {
+    return await NativeModules.RNGameCenter.presentMatchmaker(options);
+  },
+
+  sendMatchData: async (data, reliable = true) => {
+    return await NativeModules.RNGameCenter.sendMatchData(data, reliable);
+  },
+
+  sendMatchDataToPlayers: async (playerIDs, data, reliable = true) => {
+    return await NativeModules.RNGameCenter.sendMatchDataToPlayers(playerIDs, data, reliable);
+  },
+
+  getMatchPlayers: async () => {
+    return await NativeModules.RNGameCenter.getMatchPlayers();
+  },
+
+  disconnectMatch: async () => {
+    return await NativeModules.RNGameCenter.disconnectMatch();
   },
 };
 

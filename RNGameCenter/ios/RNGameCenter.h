@@ -6,8 +6,6 @@
 //  Copyright © 2017 Facebook. All rights reserved.
 //
 
-//#import <Foundation/Foundation.h>
-
 #import <GameKit/GameKit.h>
 
 #if __has_include("RCTBridgeModule.h")
@@ -16,9 +14,15 @@
 #import <React/RCTBridgeModule.h>
 #endif
 
+#if __has_include("RCTEventEmitter.h")
+#import "RCTEventEmitter.h"
+#else
+#import <React/RCTEventEmitter.h>
+#endif
 
-
-
-@interface RNGameCenter : NSObject <RCTBridgeModule>
+@interface RNGameCenter : RCTEventEmitter <RCTBridgeModule,
+                                           GKMatchDelegate,
+                                           GKMatchmakerViewControllerDelegate,
+                                           GKLocalPlayerListener>
 
 @end

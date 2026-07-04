@@ -596,3 +596,56 @@ ADD METHODS
 [ ] invite()
 [ ] challengeComposer()
 [ ] findScoresOfFriendsToChallenge()
+
+# Realtime Multiplayer Methods (GKMatch)
+
+Version 1.3.0 adds real-time multiplayer built on Game Center's `GKMatch` /
+`GKMatchmakerViewController` APIs. The native module is now an event emitter:
+match data and connection changes are delivered as events.
+
+## presentMatchmaker(options) <Promise>
+
+Presents the system matchmaker UI. Resolves when a match is found, rejects
+with code `cancelled` / `failed` if the player backs out.
+
+```js
+const { players, expectedPlayerCount, localPlayerID } =
+  await RNGameCenter.presentMatchmaker({
+    minPlayers: 2,
+    maxPlayers: 4,
+    inviteMessage: "Let's play!",
+  });
+```
+
+## Events
+
+```js
+const subs = [
+  RNGameCenter.addEventListener('gc:data', ({ fromPlayerID, data }) => {}),
+  RNGameCenter.addEventListener('gc:playerState', ({ playerID, state }) => {}),
+  RNGameCenter.addEventListener('gc:matchFound', payload => {}), // also fires for accepted invites
+  RNGameCenter.addEventListener('gc:inviteAccepted', () => {}),
+  RNGameCenter.addEventListener('gc:matchError', ({ message }) => {}),
+];
+// later: subs.forEach(s => s.remove());
+```
+
+## Sending data
+
+```js
+await RNGameCenter.sendMatchData(JSON.stringify(msg), true /* reliable */);
+await RNGameCenter.sendMatchDataToPlayers([playerID], JSON.stringify(msg), true);
+```
+
+## Other methods
+
+- `getLocalPlayerID()` — resolves `{ playerID, alias, displayName, isLocal }` for the authenticated local player (`gamePlayerID`).
+- `getMatchPlayers()` — resolves `{ players, expectedPlayerCount, localPlayerID }` for the current match.
+- `disconnectMatch()` — leaves the current match; idempotent.
+
+Invites: after `authenticateLocalPlayer` succeeds the module registers a
+`GKLocalPlayerListener`; when the player accepts a Game Center invite the
+module presents the matchmaker for that invite and emits `gc:matchFound`
+when the match connects.
+
+TypeScript definitions ship in `RNGameCenter/index.d.ts`.

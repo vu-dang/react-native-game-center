@@ -25,6 +25,13 @@ static RNGameCenter *SharedInstance = nil;
 @property (nonatomic, strong) GKGameCenterViewController *gkView;
 @property (nonatomic, strong) UIViewController *reactNativeViewController;
 @property (nonatomic, strong) NSNumber *_currentAdditionCounter;
+
+// Realtime multiplayer
+@property (nonatomic, strong) GKMatch *currentMatch;
+@property (nonatomic, copy) RCTPromiseResolveBlock matchmakerResolve;
+@property (nonatomic, copy) RCTPromiseRejectBlock matchmakerReject;
+@property (nonatomic, assign) BOOL hasListeners;
+@property (nonatomic, assign) BOOL inviteListenerRegistered;
 @end
 
 @interface MobSvcSavedGameData : NSObject <NSSecureCoding>
@@ -45,6 +52,28 @@ static RNGameCenter *SharedInstance = nil;
 }
 
 RCT_EXPORT_MODULE()
+
+/* -----------------------------------------------------------------------------------------------------------------------------------------
+ Event emitter plumbing
+ -----------------------------------------------------------------------------------------------------------------------------------------*/
+
+- (NSArray<NSString *> *)supportedEvents {
+    return @[@"gc:matchFound", @"gc:data", @"gc:playerState", @"gc:inviteAccepted", @"gc:matchError"];
+}
+
+- (void)startObserving {
+    self.hasListeners = YES;
+}
+
+- (void)stopObserving {
+    self.hasListeners = NO;
+}
+
+- (void)emit:(NSString *)name body:(id)body {
+    if (self.hasListeners) {
+        [self sendEventWithName:name body:body];
+    }
+}
 
 - (UIViewController *)getRootViewController {
     if (@available(iOS 13.0, *)) {
@@ -466,6 +495,247 @@ RCT_EXPORT_METHOD(challengePlayersToCompleteAchievement:(NSDictionary *)options
 #pragma clang diagnostic pop
 }
 
+#pragma mark - Realtime Multiplayer
+
+/* -----------------------------------------------------------------------------------------------------------------------------------------
+ Realtime multiplayer (GKMatch)
+ -----------------------------------------------------------------------------------------------------------------------------------------*/
+
+- (NSDictionary *)playerDict:(GKPlayer *)player {
+    NSString *playerID;
+    if (@available(iOS 12.4, *)) {
+        playerID = player.gamePlayerID;
+    } else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        playerID = player.playerID;
+#pragma clang diagnostic pop
+    }
+    return @{
+        @"playerID": playerID ?: @"",
+        @"alias": player.alias ?: @"",
+        @"displayName": player.displayName ?: @"",
+        @"isLocal": @([playerID isEqualToString:[self localPlayerID]]),
+    };
+}
+
+- (NSString *)localPlayerID {
+    GKLocalPlayer *localPlayer = [GKLocalPlayer localPlayer];
+    if (@available(iOS 12.4, *)) {
+        return localPlayer.gamePlayerID ?: @"";
+    }
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    return localPlayer.playerID ?: @"";
+#pragma clang diagnostic pop
+}
+
+- (NSDictionary *)matchPayload:(GKMatch *)match {
+    NSMutableArray *players = [NSMutableArray array];
+    for (GKPlayer *player in match.players) {
+        [players addObject:[self playerDict:player]];
+    }
+    return @{
+        @"players": players,
+        @"expectedPlayerCount": @(match.expectedPlayerCount),
+        @"localPlayerID": [self localPlayerID],
+    };
+}
+
+- (void)registerInviteListenerIfNeeded {
+    if (!self.inviteListenerRegistered) {
+        self.inviteListenerRegistered = YES;
+        [[GKLocalPlayer localPlayer] registerListener:self];
+    }
+}
+
+RCT_EXPORT_METHOD(getLocalPlayerID:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (![GKLocalPlayer localPlayer].isAuthenticated) {
+        return reject(@"not_authenticated", @"Local player is not authenticated with Game Center", nil);
+    }
+    resolve([self playerDict:[GKLocalPlayer localPlayer]]);
+}
+
+RCT_EXPORT_METHOD(presentMatchmaker:(NSDictionary *)options
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (![GKLocalPlayer localPlayer].isAuthenticated) {
+        return reject(@"not_authenticated", @"Local player is not authenticated with Game Center", nil);
+    }
+    if (self.matchmakerResolve != nil) {
+        return reject(@"already_pending", @"A matchmaker request is already in progress", nil);
+    }
+    if (self.currentMatch != nil) {
+        return reject(@"already_in_match", @"Already in a match; call disconnectMatch first", nil);
+    }
+    [self registerInviteListenerIfNeeded];
+
+    GKMatchRequest *request = [[GKMatchRequest alloc] init];
+    request.minPlayers = options[@"minPlayers"] ? [RCTConvert NSInteger:options[@"minPlayers"]] : 2;
+    request.maxPlayers = options[@"maxPlayers"] ? [RCTConvert NSInteger:options[@"maxPlayers"]] : 4;
+    if (options[@"inviteMessage"]) {
+        request.inviteMessage = [RCTConvert NSString:options[@"inviteMessage"]];
+    }
+
+    GKMatchmakerViewController *matchmakerVC = [[GKMatchmakerViewController alloc] initWithMatchRequest:request];
+    if (matchmakerVC == nil) {
+        return reject(@"failed", @"Could not create matchmaker view controller", nil);
+    }
+    matchmakerVC.matchmakerDelegate = self;
+    self.matchmakerResolve = resolve;
+    self.matchmakerReject = reject;
+    [[self getRootViewController] presentViewController:matchmakerVC animated:YES completion:nil];
+}
+
+RCT_EXPORT_METHOD(sendMatchData:(NSString *)data
+                  reliable:(BOOL)reliable
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (self.currentMatch == nil) {
+        return reject(@"no_match", @"No active match", nil);
+    }
+    NSError *error = nil;
+    BOOL sent = [self.currentMatch sendDataToAllPlayers:[data dataUsingEncoding:NSUTF8StringEncoding]
+                                           withDataMode:reliable ? GKMatchSendDataReliable : GKMatchSendDataUnreliable
+                                                  error:&error];
+    if (!sent) {
+        return reject(@"send_failed", error.localizedDescription ?: @"Failed to send match data", error);
+    }
+    resolve(nil);
+}
+
+RCT_EXPORT_METHOD(sendMatchDataToPlayers:(NSArray<NSString *> *)playerIDs
+                  data:(NSString *)data
+                  reliable:(BOOL)reliable
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (self.currentMatch == nil) {
+        return reject(@"no_match", @"No active match", nil);
+    }
+    NSMutableArray<GKPlayer *> *recipients = [NSMutableArray array];
+    for (GKPlayer *player in self.currentMatch.players) {
+        NSString *playerID = [self playerDict:player][@"playerID"];
+        if ([playerIDs containsObject:playerID]) {
+            [recipients addObject:player];
+        }
+    }
+    if (recipients.count == 0) {
+        return reject(@"no_recipients", @"None of the given playerIDs are in the current match", nil);
+    }
+    NSError *error = nil;
+    BOOL sent = [self.currentMatch sendData:[data dataUsingEncoding:NSUTF8StringEncoding]
+                                  toPlayers:recipients
+                                   dataMode:reliable ? GKMatchSendDataReliable : GKMatchSendDataUnreliable
+                                      error:&error];
+    if (!sent) {
+        return reject(@"send_failed", error.localizedDescription ?: @"Failed to send match data", error);
+    }
+    resolve(nil);
+}
+
+RCT_EXPORT_METHOD(getMatchPlayers:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (self.currentMatch == nil) {
+        return reject(@"no_match", @"No active match", nil);
+    }
+    resolve([self matchPayload:self.currentMatch]);
+}
+
+RCT_EXPORT_METHOD(disconnectMatch:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (self.currentMatch != nil) {
+        self.currentMatch.delegate = nil;
+        [self.currentMatch disconnect];
+        self.currentMatch = nil;
+    }
+    resolve(nil);
+}
+
+#pragma mark GKMatchmakerViewControllerDelegate
+
+- (void)matchmakerViewController:(GKMatchmakerViewController *)viewController didFindMatch:(GKMatch *)match {
+    [viewController dismissViewControllerAnimated:YES completion:nil];
+    match.delegate = self;
+    self.currentMatch = match;
+    NSDictionary *payload = [self matchPayload:match];
+    if (self.matchmakerResolve) {
+        RCTPromiseResolveBlock resolve = self.matchmakerResolve;
+        self.matchmakerResolve = nil;
+        self.matchmakerReject = nil;
+        resolve(payload);
+    }
+    // Also emitted so the invite-accepted flow (no pending promise) shares one JS code path.
+    [self emit:@"gc:matchFound" body:payload];
+}
+
+- (void)matchmakerViewControllerWasCancelled:(GKMatchmakerViewController *)viewController {
+    [viewController dismissViewControllerAnimated:YES completion:nil];
+    if (self.matchmakerReject) {
+        RCTPromiseRejectBlock reject = self.matchmakerReject;
+        self.matchmakerResolve = nil;
+        self.matchmakerReject = nil;
+        reject(@"cancelled", @"Matchmaking was cancelled", nil);
+    }
+}
+
+- (void)matchmakerViewController:(GKMatchmakerViewController *)viewController didFailWithError:(NSError *)error {
+    [viewController dismissViewControllerAnimated:YES completion:nil];
+    if (self.matchmakerReject) {
+        RCTPromiseRejectBlock reject = self.matchmakerReject;
+        self.matchmakerResolve = nil;
+        self.matchmakerReject = nil;
+        reject(@"failed", error.localizedDescription ?: @"Matchmaking failed", error);
+    }
+}
+
+#pragma mark GKMatchDelegate
+
+- (void)match:(GKMatch *)match didReceiveData:(NSData *)data fromRemotePlayer:(GKPlayer *)player {
+    if (match != self.currentMatch) return;
+    NSString *string = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    [self emit:@"gc:data" body:@{
+        @"fromPlayerID": [self playerDict:player][@"playerID"],
+        @"data": string ?: @"",
+    }];
+}
+
+- (void)match:(GKMatch *)match player:(GKPlayer *)player didChangeConnectionState:(GKPlayerConnectionState)state {
+    if (match != self.currentMatch) return;
+    NSString *stateName = state == GKPlayerStateConnected ? @"connected"
+                        : state == GKPlayerStateDisconnected ? @"disconnected"
+                        : @"unknown";
+    [self emit:@"gc:playerState" body:@{
+        @"playerID": [self playerDict:player][@"playerID"],
+        @"state": stateName,
+        @"expectedPlayerCount": @(match.expectedPlayerCount),
+    }];
+}
+
+- (void)match:(GKMatch *)match didFailWithError:(NSError *)error {
+    if (match != self.currentMatch) return;
+    [self emit:@"gc:matchError" body:@{
+        @"message": error.localizedDescription ?: @"Match failed",
+    }];
+}
+
+- (BOOL)match:(GKMatch *)match shouldReinviteDisconnectedPlayer:(GKPlayer *)player {
+    // The app converts disconnected seats to AI instead of stalling on a reinvite.
+    return NO;
+}
+
+#pragma mark GKLocalPlayerListener (invites)
+
+- (void)player:(GKPlayer *)player didAcceptInvite:(GKInvite *)invite {
+    [self emit:@"gc:inviteAccepted" body:@{
+        @"fromPlayerID": [self playerDict:player][@"playerID"],
+    }];
+    GKMatchmakerViewController *matchmakerVC = [[GKMatchmakerViewController alloc] initWithInvite:invite];
+    if (matchmakerVC == nil) return;
+    matchmakerVC.matchmakerDelegate = self;
+    [[self getRootViewController] presentViewController:matchmakerVC animated:YES completion:nil];
+}
+
 - (void)gameCenterViewControllerDidFinish:(GKGameCenterViewController *)viewController {
     [viewController dismissViewControllerAnimated:YES completion:nil];
 }
@@ -556,12 +826,14 @@ RCT_EXPORT_METHOD(authenticateLocalPlayer:(RCTResponseSenderBlock)callback) {
     UIViewController *mainController = [self getRootViewController];
     GKLocalPlayer *localPlayer = [GKLocalPlayer localPlayer];
     __block Boolean called = false;
+    __weak typeof(self) weakSelf = self;
     localPlayer.authenticateHandler = ^(UIViewController *viewController, NSError *error) {
         if (viewController != nil) {
             [mainController presentViewController:viewController animated:YES completion:nil];
         } else {
             if ([GKLocalPlayer localPlayer].authenticated) {
                 _isGameCenterAvailable = YES;
+                [weakSelf registerInviteListenerIfNeeded];
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
                 [[GKLocalPlayer localPlayer] loadDefaultLeaderboardIdentifierWithCompletionHandler:^(NSString *leaderboardIdentifier, NSError *error) {
