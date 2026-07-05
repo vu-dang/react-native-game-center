@@ -609,13 +609,38 @@ Presents the system matchmaker UI. Resolves when a match is found, rejects
 with code `cancelled` / `failed` if the player backs out.
 
 ```js
-const { players, expectedPlayerCount, localPlayerID } =
+const { players, expectedPlayerCount, localPlayerID, playerGroup } =
   await RNGameCenter.presentMatchmaker({
     minPlayers: 2,
     maxPlayers: 4,
     inviteMessage: "Let's play!",
+    playerGroup: 1,       // optional auto-match pool, see below
+    playerAttributes: 0,  // optional uint32 role mask (GKMatchRequest.playerAttributes)
   });
 ```
+
+### Multiplayer modes (playerGroup)
+
+Game Center only auto-matches players whose requests share the same
+`playerGroup`. If your game has several multiplayer modes (say a 4-player
+standard game, a 2-player co-op mode, and a 2-player duel), pass a distinct
+non-zero `playerGroup` per mode so players queuing for different modes are
+never paired together:
+
+```js
+const PLAYER_GROUPS = { standard: 1, coop: 2, duel: 3 };
+await RNGameCenter.presentMatchmaker({
+  minPlayers: 2,
+  maxPlayers: 2,
+  playerGroup: PLAYER_GROUPS.coop,
+});
+```
+
+The group travels with invites too: `gc:inviteAccepted` fires with
+`{ fromPlayerID, playerGroup, playerAttributes }`, and every match payload
+(`presentMatchmaker` result, `gc:matchFound`, `getMatchPlayers()`) includes
+the `playerGroup` the match was made with (0 when none was set), so an
+invited player can start the correct mode.
 
 ## Events
 
@@ -640,7 +665,7 @@ await RNGameCenter.sendMatchDataToPlayers([playerID], JSON.stringify(msg), true)
 ## Other methods
 
 - `getLocalPlayerID()` — resolves `{ playerID, alias, displayName, isLocal }` for the authenticated local player (`gamePlayerID`).
-- `getMatchPlayers()` — resolves `{ players, expectedPlayerCount, localPlayerID }` for the current match.
+- `getMatchPlayers()` — resolves `{ players, expectedPlayerCount, localPlayerID, playerGroup }` for the current match.
 - `disconnectMatch()` — leaves the current match; idempotent.
 
 Invites: after `authenticateLocalPlayer` succeeds the module registers a

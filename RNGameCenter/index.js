@@ -190,8 +190,9 @@ const RNGameCenter = {
     return await NativeModules.RNGameCenter.getLocalPlayerID();
   },
 
-  // options: { minPlayers?: number, maxPlayers?: number, inviteMessage?: string }
-  // Resolves { players, expectedPlayerCount, localPlayerID } when a match is found.
+  // options: { minPlayers?, maxPlayers?, inviteMessage?, playerGroup?, playerAttributes? }
+  // playerGroup keeps auto-match pools separate per game mode.
+  // Resolves { players, expectedPlayerCount, localPlayerID, playerGroup } when a match is found.
   presentMatchmaker: async (options = {}) => {
     return await NativeModules.RNGameCenter.presentMatchmaker(options);
   },

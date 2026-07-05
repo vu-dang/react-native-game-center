@@ -28,6 +28,10 @@ static RNGameCenter *SharedInstance = nil;
 
 // Realtime multiplayer
 @property (nonatomic, strong) GKMatch *currentMatch;
+// playerGroup of the request/invite that produced the pending matchmaker,
+// promoted to currentPlayerGroup when the match connects.
+@property (nonatomic, assign) NSUInteger pendingPlayerGroup;
+@property (nonatomic, assign) NSUInteger currentPlayerGroup;
 @property (nonatomic, copy) RCTPromiseResolveBlock matchmakerResolve;
 @property (nonatomic, copy) RCTPromiseRejectBlock matchmakerReject;
 @property (nonatomic, assign) BOOL hasListeners;
@@ -539,6 +543,7 @@ RCT_EXPORT_METHOD(challengePlayersToCompleteAchievement:(NSDictionary *)options
         @"players": players,
         @"expectedPlayerCount": @(match.expectedPlayerCount),
         @"localPlayerID": [self localPlayerID],
+        @"playerGroup": @(self.currentPlayerGroup),
     };
 }
 
@@ -577,6 +582,16 @@ RCT_EXPORT_METHOD(presentMatchmaker:(NSDictionary *)options
     if (options[@"inviteMessage"]) {
         request.inviteMessage = [RCTConvert NSString:options[@"inviteMessage"]];
     }
+    // Game Center only auto-matches requests that share a playerGroup, so a
+    // game with several multiplayer modes gives each mode its own group and
+    // players queuing for different modes can never be paired together.
+    if (options[@"playerGroup"]) {
+        request.playerGroup = [RCTConvert NSUInteger:options[@"playerGroup"]];
+    }
+    if (options[@"playerAttributes"]) {
+        request.playerAttributes = (uint32_t)[RCTConvert NSUInteger:options[@"playerAttributes"]];
+    }
+    self.pendingPlayerGroup = request.playerGroup;
 
     GKMatchmakerViewController *matchmakerVC = [[GKMatchmakerViewController alloc] initWithMatchRequest:request];
     if (matchmakerVC == nil) {
@@ -649,6 +664,7 @@ RCT_EXPORT_METHOD(disconnectMatch:(RCTPromiseResolveBlock)resolve
         [self.currentMatch disconnect];
         self.currentMatch = nil;
     }
+    self.currentPlayerGroup = 0;
     resolve(nil);
 }
 
@@ -658,6 +674,7 @@ RCT_EXPORT_METHOD(disconnectMatch:(RCTPromiseResolveBlock)resolve
     [viewController dismissViewControllerAnimated:YES completion:nil];
     match.delegate = self;
     self.currentMatch = match;
+    self.currentPlayerGroup = self.pendingPlayerGroup;
     NSDictionary *payload = [self matchPayload:match];
     if (self.matchmakerResolve) {
         RCTPromiseResolveBlock resolve = self.matchmakerResolve;
@@ -727,8 +744,13 @@ RCT_EXPORT_METHOD(disconnectMatch:(RCTPromiseResolveBlock)resolve
 #pragma mark GKLocalPlayerListener (invites)
 
 - (void)player:(GKPlayer *)player didAcceptInvite:(GKInvite *)invite {
+    // The invite carries the sender's playerGroup, so the recipient learns
+    // which multiplayer mode it is joining before the match connects.
+    self.pendingPlayerGroup = invite.playerGroup;
     [self emit:@"gc:inviteAccepted" body:@{
         @"fromPlayerID": [self playerDict:player][@"playerID"],
+        @"playerGroup": @(invite.playerGroup),
+        @"playerAttributes": @(invite.playerAttributes),
     }];
     GKMatchmakerViewController *matchmakerVC = [[GKMatchmakerViewController alloc] initWithInvite:invite];
     if (matchmakerVC == nil) return;

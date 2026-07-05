@@ -13,6 +13,11 @@ export interface MatchFoundPayload {
   /** Players Game Center is still connecting; 0 when everyone is in. */
   expectedPlayerCount: number;
   localPlayerID: string;
+  /**
+   * playerGroup of the request (or accepted invite) that produced this
+   * match; 0 when none was set.
+   */
+  playerGroup: number;
 }
 
 export interface MatchDataPayload {
@@ -28,6 +33,10 @@ export interface PlayerStatePayload {
 
 export interface InviteAcceptedPayload {
   fromPlayerID: string;
+  /** playerGroup the inviter matchmade with; 0 when none was set. */
+  playerGroup: number;
+  /** playerAttributes the inviter matchmade with; 0 when none were set. */
+  playerAttributes: number;
 }
 
 export interface MatchErrorPayload {
@@ -53,6 +62,17 @@ export interface PresentMatchmakerOptions {
   minPlayers?: number;
   maxPlayers?: number;
   inviteMessage?: string;
+  /**
+   * Auto-match pool. Game Center only pairs requests that share a
+   * playerGroup, so give each multiplayer mode (e.g. 2v2, co-op, duel) its
+   * own non-zero group to keep their queues separate.
+   */
+  playerGroup?: number;
+  /**
+   * uint32 bit mask of complementary roles for auto-matching within a
+   * playerGroup (see GKMatchRequest.playerAttributes).
+   */
+  playerAttributes?: number;
 }
 
 export interface RNGameCenterModule {
