@@ -62,7 +62,7 @@ RCT_EXPORT_MODULE()
  -----------------------------------------------------------------------------------------------------------------------------------------*/
 
 - (NSArray<NSString *> *)supportedEvents {
-    return @[@"gc:matchFound", @"gc:data", @"gc:playerState", @"gc:inviteAccepted", @"gc:matchError"];
+    return @[@"gc:matchFound", @"gc:data", @"gc:playerState", @"gc:inviteAccepted", @"gc:matchError", @"gc:authChanged"];
 }
 
 - (void)startObserving {
