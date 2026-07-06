@@ -62,7 +62,12 @@ RCT_EXPORT_MODULE()
  -----------------------------------------------------------------------------------------------------------------------------------------*/
 
 - (NSArray<NSString *> *)supportedEvents {
-    return @[@"gc:matchFound", @"gc:data", @"gc:playerState", @"gc:inviteAccepted", @"gc:matchError", @"gc:authChanged"];
+    return @[@"gc:matchFound", @"gc:data", @"gc:playerState", @"gc:inviteAccepted", @"gc:matchError", @"gc:authChanged", @"gc:log"];
+}
+
+- (void)logToJS:(NSString *)message {
+    NSLog(@"%@", message);
+    [self emit:@"gc:log" body:@{@"message": message}];
 }
 
 - (void)startObserving {
@@ -80,22 +85,28 @@ RCT_EXPORT_MODULE()
 }
 
 - (UIViewController *)getRootViewController {
-    if (@available(iOS 13.0, *)) {
-        for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
-            if ([scene isKindOfClass:[UIWindowScene class]] && scene.activationState == UISceneActivationStateForegroundActive) {
-                UIWindowScene *windowScene = (UIWindowScene *)scene;
-                for (UIWindow *window in windowScene.windows) {
-                    if (window.isKeyWindow) {
-                        return window.rootViewController;
-                    }
-                }
-            }
-        }
+    UIViewController *vc = RCTPresentedViewController();
+    if (vc) {
+        return vc;
     }
+    
+    // Fallback
+    UIWindow *window = nil;
+    if ([[UIApplication sharedApplication].delegate respondsToSelector:@selector(window)]) {
+        window = [[UIApplication sharedApplication].delegate window];
+    }
+    if (!window) {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    return [UIApplication sharedApplication].keyWindow.rootViewController;
+        window = [UIApplication sharedApplication].keyWindow;
 #pragma clang diagnostic pop
+    }
+    
+    UIViewController *topController = window.rootViewController;
+    while (topController.presentedViewController) {
+        topController = topController.presentedViewController;
+    }
+    return topController;
 }
 
 
@@ -111,33 +122,47 @@ RCT_EXPORT_METHOD(init:(NSDictionary *)options
 
     if (options[@"achievementIdentifier"]) _achievementIdentifier = options[@"achievementIdentifier"];
 
-    UIViewController *rnView = [self getRootViewController];
-    GKLocalPlayer *localPlayer = [GKLocalPlayer localPlayer];
-    localPlayer.authenticateHandler = ^(UIViewController *gcViewController, NSError *error) {
-        if (gcViewController != nil) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [rnView presentViewController:gcViewController animated:YES completion:nil];
-            });
-        } else {
-            if ([GKLocalPlayer localPlayer].authenticated) {
+    __block Boolean called = false;
+    __weak typeof(self) weakSelf = self;
+    
+    dispatch_async(dispatch_get_main_queue(), ^{
+        GKLocalPlayer *localPlayer = [GKLocalPlayer localPlayer];
+        localPlayer.authenticateHandler = ^(UIViewController *gcViewController, NSError *error) {
+            if (gcViewController != nil) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    UIViewController *topController = [self getRootViewController];
+                    [topController presentViewController:gcViewController animated:YES completion:nil];
+                });
+            } else {
+                if ([GKLocalPlayer localPlayer].authenticated) {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-                [[GKLocalPlayer localPlayer] loadDefaultLeaderboardIdentifierWithCompletionHandler:^(NSString *leaderboardIdentifier, NSError *error) {
-                    if (error != nil) {
-                        NSLog(@"%@", [error localizedDescription]);
-                        reject(@"Error", @"Error initiating Game Center make sure you are enrolled in the apple program, you set up a game center in itunes connect, and you registered it to the correct and matching app bundle id", error);
-                    } else {
-                        _isGameCenterAvailable = YES;
-                        _leaderboardIdentifier = leaderboardIdentifier;
-                        resolve(@"init success");
-                    }
-                }];
+                    [[GKLocalPlayer localPlayer] loadDefaultLeaderboardIdentifierWithCompletionHandler:^(NSString *leaderboardIdentifier, NSError *error) {
+                        if (error != nil) {
+                            NSLog(@"%@", [error localizedDescription]);
+                            if (!called) {
+                                called = true;
+                                reject(@"Error", @"Error initiating Game Center", error);
+                            }
+                        } else {
+                            _isGameCenterAvailable = YES;
+                            _leaderboardIdentifier = leaderboardIdentifier;
+                            if (!called) {
+                                called = true;
+                                resolve(@"init success");
+                            }
+                        }
+                    }];
 #pragma clang diagnostic pop
-            } else {
-                reject(@"Error", @"Error initiating Game Center Player", error);
+                } else {
+                    if (!called) {
+                        called = true;
+                        reject(@"Error", @"Error initiating Game Center Player", error);
+                    }
+                }
             }
-        }
-    };
+        };
+    });
 }
 
 RCT_EXPORT_METHOD(userLogged:(RCTPromiseResolveBlock)resolve
@@ -611,13 +636,11 @@ RCT_EXPORT_METHOD(presentMatchmaker:(NSDictionary *)options
     self.matchmakerResolve = resolve;
     self.matchmakerReject = reject;
     dispatch_async(dispatch_get_main_queue(), ^{
+        [self logToJS:@"[RNGameCenter] dispatch_async on main queue executing..."];
         UIViewController *topController = [self getRootViewController];
-        while (topController.presentedViewController) {
-            topController = topController.presentedViewController;
-        }
-        NSLog(@"[RNGameCenter] Presenting Matchmaker on topController: %@", topController);
+        [self logToJS:[NSString stringWithFormat:@"[RNGameCenter] Topmost controller is: %@", topController]];
         [topController presentViewController:matchmakerVC animated:YES completion:^{
-            NSLog(@"[RNGameCenter] Successfully presented Matchmaker");
+            [self logToJS:@"[RNGameCenter] presentViewController completion block fired!"];
         }];
     });
 }
@@ -776,9 +799,6 @@ RCT_EXPORT_METHOD(disconnectMatch:(RCTPromiseResolveBlock)resolve
     matchmakerVC.matchmakerDelegate = self;
     dispatch_async(dispatch_get_main_queue(), ^{
         UIViewController *topController = [self getRootViewController];
-        while (topController.presentedViewController) {
-            topController = topController.presentedViewController;
-        }
         NSLog(@"[RNGameCenter] Presenting Matchmaker (invite) on topController: %@", topController);
         [topController presentViewController:matchmakerVC animated:YES completion:^{
             NSLog(@"[RNGameCenter] Successfully presented Matchmaker for invite");
@@ -875,38 +895,46 @@ RCT_EXPORT_METHOD(reportScore:(nonnull NSNumber *)newScore leaderboardIdentifier
 }
 
 RCT_EXPORT_METHOD(authenticateLocalPlayer:(RCTResponseSenderBlock)callback) {
-    UIViewController *mainController = [self getRootViewController];
-    GKLocalPlayer *localPlayer = [GKLocalPlayer localPlayer];
+    if ([GKLocalPlayer localPlayer].isAuthenticated) {
+        callback(@[@{@"success": @(YES)}]);
+        return;
+    }
+
     __block Boolean called = false;
     __weak typeof(self) weakSelf = self;
-    localPlayer.authenticateHandler = ^(UIViewController *viewController, NSError *error) {
-        if (viewController != nil) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [mainController presentViewController:viewController animated:YES completion:nil];
-            });
-        } else {
-            if ([GKLocalPlayer localPlayer].authenticated) {
-                _isGameCenterAvailable = YES;
-                [weakSelf registerInviteListenerIfNeeded];
+    
+    dispatch_async(dispatch_get_main_queue(), ^{
+        GKLocalPlayer *localPlayer = [GKLocalPlayer localPlayer];
+        localPlayer.authenticateHandler = ^(UIViewController *viewController, NSError *error) {
+            if (viewController != nil) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    UIViewController *topController = [self getRootViewController];
+                    [topController presentViewController:viewController animated:YES completion:nil];
+                });
+            } else {
+                if ([GKLocalPlayer localPlayer].authenticated) {
+                    _isGameCenterAvailable = YES;
+                    [weakSelf registerInviteListenerIfNeeded];
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-                [[GKLocalPlayer localPlayer] loadDefaultLeaderboardIdentifierWithCompletionHandler:^(NSString *leaderboardIdentifier, NSError *error) {
-                    if (error != nil) NSLog(@"%@", [error localizedDescription]);
-                    else _leaderboardIdentifier = leaderboardIdentifier;
-                }];
+                    [[GKLocalPlayer localPlayer] loadDefaultLeaderboardIdentifierWithCompletionHandler:^(NSString *leaderboardIdentifier, NSError *error) {
+                        if (error != nil) NSLog(@"%@", [error localizedDescription]);
+                        else _leaderboardIdentifier = leaderboardIdentifier;
+                    }];
 #pragma clang diagnostic pop
-            } else {
-                _isGameCenterAvailable = NO;
-                if (error != nil) NSLog(@"Game Center authentication failed: %@", [error localizedDescription]);
+                } else {
+                    _isGameCenterAvailable = NO;
+                    if (error != nil) NSLog(@"Game Center authentication failed: %@", [error localizedDescription]);
+                }
+                
+                // Report the result once
+                if (!called) {
+                    called = true;
+                    callback(@[@{@"success": @(_isGameCenterAvailable)}]);
+                }
             }
-            // Report the result once, on both success and failure, so the JS side
-            // can react to a failed sign-in instead of waiting forever.
-            if (!called) {
-                called = true;
-                callback(@[@{@"success": @(_isGameCenterAvailable)}]);
-            }
-        }
-    };
+        };
+    });
 }
 
 RCT_EXPORT_METHOD(loadSavedGameData:(NSDictionary *)options
