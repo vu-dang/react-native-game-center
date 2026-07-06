@@ -611,7 +611,14 @@ RCT_EXPORT_METHOD(presentMatchmaker:(NSDictionary *)options
     self.matchmakerResolve = resolve;
     self.matchmakerReject = reject;
     dispatch_async(dispatch_get_main_queue(), ^{
-        [[self getRootViewController] presentViewController:matchmakerVC animated:YES completion:nil];
+        UIViewController *topController = [self getRootViewController];
+        while (topController.presentedViewController) {
+            topController = topController.presentedViewController;
+        }
+        NSLog(@"[RNGameCenter] Presenting Matchmaker on topController: %@", topController);
+        [topController presentViewController:matchmakerVC animated:YES completion:^{
+            NSLog(@"[RNGameCenter] Successfully presented Matchmaker");
+        }];
     });
 }
 
@@ -768,7 +775,14 @@ RCT_EXPORT_METHOD(disconnectMatch:(RCTPromiseResolveBlock)resolve
     if (matchmakerVC == nil) return;
     matchmakerVC.matchmakerDelegate = self;
     dispatch_async(dispatch_get_main_queue(), ^{
-        [[self getRootViewController] presentViewController:matchmakerVC animated:YES completion:nil];
+        UIViewController *topController = [self getRootViewController];
+        while (topController.presentedViewController) {
+            topController = topController.presentedViewController;
+        }
+        NSLog(@"[RNGameCenter] Presenting Matchmaker (invite) on topController: %@", topController);
+        [topController presentViewController:matchmakerVC animated:YES completion:^{
+            NSLog(@"[RNGameCenter] Successfully presented Matchmaker for invite");
+        }];
     });
 }
 
