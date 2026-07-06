@@ -111,7 +111,9 @@ RCT_EXPORT_METHOD(init:(NSDictionary *)options
     GKLocalPlayer *localPlayer = [GKLocalPlayer localPlayer];
     localPlayer.authenticateHandler = ^(UIViewController *gcViewController, NSError *error) {
         if (gcViewController != nil) {
-            [rnView presentViewController:gcViewController animated:YES completion:nil];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [rnView presentViewController:gcViewController animated:YES completion:nil];
+            });
         } else {
             if ([GKLocalPlayer localPlayer].authenticated) {
 #pragma clang diagnostic push
@@ -228,7 +230,9 @@ RCT_EXPORT_METHOD(openLeaderboardModal:(NSDictionary *)options
 #pragma clang diagnostic pop
     }
     leaderboardController.gameCenterDelegate = self;
-    [rnView presentViewController:leaderboardController animated:YES completion:nil];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [rnView presentViewController:leaderboardController animated:YES completion:nil];
+    });
     resolve(@"opened Leaderboard");
 }
 
@@ -347,7 +351,9 @@ RCT_EXPORT_METHOD(openAchievementModal:(NSDictionary *)options
 #pragma clang diagnostic pop
         }
         gcViewController.gameCenterDelegate = self;
-        [rnView presentViewController:gcViewController animated:YES completion:nil];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [rnView presentViewController:gcViewController animated:YES completion:nil];
+        });
         resolve(@"Successfully opened achievements");
     } @catch (NSError *e) {
         reject(@"Error", @"Error opening achievements.", e);
@@ -400,7 +406,9 @@ RCT_EXPORT_METHOD(resetAchievements:(NSDictionary *)options
                                                                                           message:@"You successfully reset your achievements!"
                                                                                    preferredStyle:UIAlertControllerStyleAlert];
                     [successAlert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-                    [rnView presentViewController:successAlert animated:YES completion:nil];
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [rnView presentViewController:successAlert animated:YES completion:nil];
+                    });
                     resolve(@{@"message": @"User achievements reset", @"resetAchievements": @true});
                 }
             }];
@@ -412,7 +420,9 @@ RCT_EXPORT_METHOD(resetAchievements:(NSDictionary *)options
         }];
         [alert addAction:yesButton];
         [alert addAction:noButton];
-        [rnView presentViewController:alert animated:YES completion:nil];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [rnView presentViewController:alert animated:YES completion:nil];
+        });
     } else {
         resolve(@{@"message": @"User achievements reset", @"resetAchievements": @true});
     }
@@ -585,7 +595,9 @@ RCT_EXPORT_METHOD(presentMatchmaker:(NSDictionary *)options
     matchmakerVC.matchmakerDelegate = self;
     self.matchmakerResolve = resolve;
     self.matchmakerReject = reject;
-    [[self getRootViewController] presentViewController:matchmakerVC animated:YES completion:nil];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[self getRootViewController] presentViewController:matchmakerVC animated:YES completion:nil];
+    });
 }
 
 RCT_EXPORT_METHOD(sendMatchData:(NSString *)data
@@ -733,7 +745,9 @@ RCT_EXPORT_METHOD(disconnectMatch:(RCTPromiseResolveBlock)resolve
     GKMatchmakerViewController *matchmakerVC = [[GKMatchmakerViewController alloc] initWithInvite:invite];
     if (matchmakerVC == nil) return;
     matchmakerVC.matchmakerDelegate = self;
-    [[self getRootViewController] presentViewController:matchmakerVC animated:YES completion:nil];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[self getRootViewController] presentViewController:matchmakerVC animated:YES completion:nil];
+    });
 }
 
 - (void)gameCenterViewControllerDidFinish:(GKGameCenterViewController *)viewController {
@@ -764,7 +778,9 @@ RCT_EXPORT_METHOD(disconnectMatch:(RCTPromiseResolveBlock)resolve
 #pragma clang diagnostic pop
     }
     gcViewController.gameCenterDelegate = self;
-    [mainController presentViewController:gcViewController animated:YES completion:nil];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [mainController presentViewController:gcViewController animated:YES completion:nil];
+    });
 }
 
 RCT_EXPORT_METHOD(showLeaderBoard) {
@@ -829,7 +845,9 @@ RCT_EXPORT_METHOD(authenticateLocalPlayer:(RCTResponseSenderBlock)callback) {
     __weak typeof(self) weakSelf = self;
     localPlayer.authenticateHandler = ^(UIViewController *viewController, NSError *error) {
         if (viewController != nil) {
-            [mainController presentViewController:viewController animated:YES completion:nil];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [mainController presentViewController:viewController animated:YES completion:nil];
+            });
         } else {
             if ([GKLocalPlayer localPlayer].authenticated) {
                 _isGameCenterAvailable = YES;
