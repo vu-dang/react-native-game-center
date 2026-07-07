@@ -609,6 +609,8 @@ RCT_EXPORT_METHOD(presentMatchmaker:(NSDictionary *)options
     if (self.currentMatch != nil) {
         return reject(@"already_in_match", @"Already in a match; call disconnectMatch first", nil);
     }
+    
+    [[GKMatchmaker sharedMatchmaker] cancel];
     [self registerInviteListenerIfNeeded];
 
     GKMatchRequest *request = [[GKMatchRequest alloc] init];
@@ -706,6 +708,7 @@ RCT_EXPORT_METHOD(disconnectMatch:(RCTPromiseResolveBlock)resolve
         [self.currentMatch disconnect];
         self.currentMatch = nil;
     }
+    [[GKMatchmaker sharedMatchmaker] cancel];
     self.currentPlayerGroup = 0;
     resolve(nil);
 }
