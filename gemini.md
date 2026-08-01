@@ -12,3 +12,4 @@
 1. **Backward Compatibility**: Because this module is a core dependency for multiple games in this workspace, any changes to the native Objective-C interface or JS bridge must be carefully validated to ensure they do not break the dependent projects.
 2. **Native iOS Builds**: Changes to iOS native code here will require the consuming apps to run `pod install` and clean their build folders.
 3. **Maintain Documentation**: After every change or completed task, you must update this `gemini.md` file to reflect the current state of the project, adding any new architectural shifts, feature additions, or relevant context if applicable.
+4. **Preserve External URLs & Domain Names**: Do NOT modify, update, or substitute existing domain names, URLs, or support emails (e.g., knownpoint.com) during refactoring unless explicitly requested by the user.
