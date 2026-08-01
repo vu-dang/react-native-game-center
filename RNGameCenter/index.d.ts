@@ -115,6 +115,19 @@ export interface RNGameCenterModule {
   sendMatchDataToPlayers(playerIDs: string[], data: string, reliable?: boolean): Promise<void>;
   getMatchPlayers(): Promise<MatchFoundPayload>;
   disconnectMatch(): Promise<void>;
+
+  // Turn-based multiplayer (GKTurnBasedMatch)
+  startTurnBasedMatchmaker(options?: { minPlayers?: number; maxPlayers?: number; playerGroup?: number }): Promise<boolean>;
+  loadTurnBasedMatches(): Promise<Array<{
+    matchID: string;
+    matchData: string;
+    isMyTurn: boolean;
+    status: number;
+    opponentName: string;
+    currentTurnPlayerId: string;
+  }>>;
+  endTurnWithNextParticipants(matchID: string, matchDataString: string): Promise<boolean>;
+  quitTurnBasedMatch(matchID: string): Promise<boolean>;
 }
 
 declare const RNGameCenter: RNGameCenterModule;

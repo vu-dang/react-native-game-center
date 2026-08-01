@@ -23,6 +23,8 @@
 @interface RNGameCenter : RCTEventEmitter <RCTBridgeModule,
                                            GKMatchDelegate,
                                            GKMatchmakerViewControllerDelegate,
+                                           GKTurnBasedMatchmakerViewControllerDelegate,
+                                           GKTurnBasedEventListener,
                                            GKLocalPlayerListener>
 
 @end

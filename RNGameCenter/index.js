@@ -212,6 +212,22 @@ const RNGameCenter = {
   disconnectMatch: async () => {
     return await NativeModules.RNGameCenter.disconnectMatch();
   },
+
+  startTurnBasedMatchmaker: async (options = {}) => {
+    return await NativeModules.RNGameCenter.startTurnBasedMatchmaker(options);
+  },
+
+  loadTurnBasedMatches: async () => {
+    return await NativeModules.RNGameCenter.loadTurnBasedMatches();
+  },
+
+  endTurnWithNextParticipants: async (matchID, matchDataString) => {
+    return await NativeModules.RNGameCenter.endTurnWithNextParticipants(matchID, matchDataString);
+  },
+
+  quitTurnBasedMatch: async (matchID) => {
+    return await NativeModules.RNGameCenter.quitTurnBasedMatch(matchID);
+  },
 };
 
 
