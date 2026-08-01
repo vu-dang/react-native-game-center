@@ -1075,7 +1075,7 @@ RCT_EXPORT_METHOD(endTurnWithNextParticipants:(NSString *)matchID
                   matchDataString:(NSString *)matchDataString
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject) {
-    [GKTurnBasedMatch loadMatchWithID:matchID completionHandler:^(GKTurnBasedMatch *match, NSError *error) {
+    [GKTurnBasedMatch loadMatchWithID:matchID withCompletionHandler:^(GKTurnBasedMatch *match, NSError *error) {
         if (error || !match) {
             return reject(@"MATCH_NOT_FOUND", error ? error.localizedDescription : @"Match not found", error);
         }
@@ -1110,7 +1110,7 @@ RCT_EXPORT_METHOD(endTurnWithNextParticipants:(NSString *)matchID
 RCT_EXPORT_METHOD(quitTurnBasedMatch:(NSString *)matchID
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject) {
-    [GKTurnBasedMatch loadMatchWithID:matchID completionHandler:^(GKTurnBasedMatch *match, NSError *error) {
+    [GKTurnBasedMatch loadMatchWithID:matchID withCompletionHandler:^(GKTurnBasedMatch *match, NSError *error) {
         if (error || !match) {
             return reject(@"MATCH_NOT_FOUND", error ? error.localizedDescription : @"Match not found", error);
         }
