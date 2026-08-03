@@ -1033,8 +1033,7 @@ RCT_EXPORT_METHOD(uploadSavedGameData:(NSDictionary *)options
 static BOOL isParticipantEligibleForTurn(GKTurnBasedParticipant *p) {
     if (!p) return NO;
     return p.status != GKTurnBasedParticipantStatusDeclined &&
-           p.status != GKTurnBasedParticipantStatusDone &&
-           p.status != GKTurnBasedParticipantStatusQuit;
+           p.status != GKTurnBasedParticipantStatusDone;
 }
 
 static BOOL pMatchesLocalPlayer(GKTurnBasedParticipant *p) {
