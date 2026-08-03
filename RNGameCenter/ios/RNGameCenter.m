@@ -1233,12 +1233,26 @@ RCT_EXPORT_METHOD(endTurnWithNextParticipants:(NSString *)matchID
 }
 
 RCT_EXPORT_METHOD(quitTurnBasedMatch:(NSString *)matchID
+                  matchDataString:(NSString *)matchDataString
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject) {
     NSLog(@"[RNGameCenter:Native] quitTurnBasedMatch for matchID: %@", matchID);
     [GKTurnBasedMatch loadMatchWithID:matchID withCompletionHandler:^(GKTurnBasedMatch *match, NSError *error) {
         if (error || !match) {
             return reject(@"MATCH_NOT_FOUND", error ? error.localizedDescription : @"Match not found", error);
+        }
+        
+        NSData *payloadData = match.matchData;
+        if (matchDataString && ![matchDataString isKindOfClass:[NSNull class]] && matchDataString.length > 0) {
+            payloadData = [matchDataString dataUsingEncoding:NSUTF8StringEncoding];
+        }
+
+        for (GKTurnBasedParticipant *p in match.participants) {
+            if (pMatchesLocalPlayer(p)) {
+                p.matchOutcome = GKTurnBasedMatchOutcomeQuit;
+            } else if (isParticipantEligibleForTurn(p)) {
+                p.matchOutcome = GKTurnBasedMatchOutcomeWon;
+            }
         }
         
         if (match.currentParticipant && pMatchesLocalPlayer(match.currentParticipant)) {
@@ -1248,7 +1262,7 @@ RCT_EXPORT_METHOD(quitTurnBasedMatch:(NSString *)matchID
                     [nextParticipants addObject:p];
                 }
             }
-            [match participantQuitInTurnWithOutcome:GKTurnBasedMatchOutcomeQuit nextParticipants:nextParticipants turnTimeout:GKTurnTimeoutDefault matchData:match.matchData completionHandler:^(NSError * _Nullable error) {
+            [match participantQuitInTurnWithOutcome:GKTurnBasedMatchOutcomeQuit nextParticipants:nextParticipants turnTimeout:GKTurnTimeoutDefault matchData:payloadData completionHandler:^(NSError * _Nullable error) {
                 if (error) {
                     reject(@"QUIT_FAILED", error.localizedDescription, error);
                 } else {

@@ -225,8 +225,8 @@ const RNGameCenter = {
     return await NativeModules.RNGameCenter.endTurnWithNextParticipants(matchID, matchDataString);
   },
 
-  quitTurnBasedMatch: async (matchID) => {
-    return await NativeModules.RNGameCenter.quitTurnBasedMatch(matchID);
+  quitTurnBasedMatch: async (matchID, matchDataString) => {
+    return await NativeModules.RNGameCenter.quitTurnBasedMatch(matchID, matchDataString || '');
   },
 };
 
