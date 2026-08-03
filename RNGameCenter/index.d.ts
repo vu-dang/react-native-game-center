@@ -128,6 +128,7 @@ export interface RNGameCenterModule {
   }>>;
   endTurnWithNextParticipants(matchID: string, matchDataString: string): Promise<boolean>;
   quitTurnBasedMatch(matchID: string, matchDataString?: string): Promise<boolean>;
+  endTurnBasedMatch(matchID: string, matchDataString: string, outcome: 'win' | 'loss' | 'draw'): Promise<boolean>;
 }
 
 declare const RNGameCenter: RNGameCenterModule;

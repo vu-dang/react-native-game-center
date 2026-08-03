@@ -1302,6 +1302,54 @@ RCT_EXPORT_METHOD(quitTurnBasedMatch:(NSString *)matchID
     }];
 }
 
+RCT_EXPORT_METHOD(endTurnBasedMatch:(NSString *)matchID
+                  matchDataString:(NSString *)matchDataString
+                  outcome:(NSString *)outcome
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    NSLog(@"[RNGameCenter:Native] endTurnBasedMatch for matchID: %@, outcome: %@", matchID, outcome);
+    [GKTurnBasedMatch loadMatchWithID:matchID withCompletionHandler:^(GKTurnBasedMatch *match, NSError *error) {
+        if (error || !match) {
+            return reject(@"MATCH_NOT_FOUND", error ? error.localizedDescription : @"Match not found", error);
+        }
+        
+        NSData *payloadData = match.matchData;
+        if (matchDataString && ![matchDataString isKindOfClass:[NSNull class]] && matchDataString.length > 0) {
+            payloadData = [matchDataString dataUsingEncoding:NSUTF8StringEncoding];
+        }
+
+        for (GKTurnBasedParticipant *p in match.participants) {
+            if (pMatchesLocalPlayer(p)) {
+                if ([outcome isEqualToString:@"win"]) {
+                    p.matchOutcome = GKTurnBasedMatchOutcomeWon;
+                } else if ([outcome isEqualToString:@"loss"]) {
+                    p.matchOutcome = GKTurnBasedMatchOutcomeLost;
+                } else {
+                    p.matchOutcome = GKTurnBasedMatchOutcomeTied;
+                }
+            } else {
+                if ([outcome isEqualToString:@"win"]) {
+                    p.matchOutcome = GKTurnBasedMatchOutcomeLost;
+                } else if ([outcome isEqualToString:@"loss"]) {
+                    p.matchOutcome = GKTurnBasedMatchOutcomeWon;
+                } else {
+                    p.matchOutcome = GKTurnBasedMatchOutcomeTied;
+                }
+            }
+        }
+
+        [match endMatchInTurnWithMatchData:payloadData completionHandler:^(NSError * _Nullable endErr) {
+            if (endErr) {
+                NSLog(@"[RNGameCenter:Native] endTurnBasedMatch error: %@", endErr.localizedDescription);
+                reject(@"END_MATCH_FAILED", endErr.localizedDescription, endErr);
+            } else {
+                NSLog(@"[RNGameCenter:Native] endTurnBasedMatch success for matchID: %@", matchID);
+                resolve(@YES);
+            }
+        }];
+    }];
+}
+
 - (NSDictionary *)dictionaryFromTurnBasedMatch:(GKTurnBasedMatch *)match {
     NSString *matchDataStr = @"";
     if (match.matchData) {
