@@ -1039,8 +1039,12 @@ static BOOL isParticipantEligibleForTurn(GKTurnBasedParticipant *p) {
 static BOOL pMatchesLocalPlayer(GKTurnBasedParticipant *p) {
     if (!p || !p.player) return NO;
     GKLocalPlayer *localPlayer = [GKLocalPlayer localPlayer];
-    return (localPlayer.teamPlayerID && [p.player.teamPlayerID isEqualToString:localPlayer.teamPlayerID]) ||
-           (localPlayer.gamePlayerID && [p.player.gamePlayerID isEqualToString:localPlayer.gamePlayerID]);
+    if ([p.player isEqual:localPlayer]) return YES;
+    if (localPlayer.teamPlayerID.length > 0 && p.player.teamPlayerID.length > 0 && [p.player.teamPlayerID isEqualToString:localPlayer.teamPlayerID]) return YES;
+    if (localPlayer.gamePlayerID.length > 0 && p.player.gamePlayerID.length > 0 && [p.player.gamePlayerID isEqualToString:localPlayer.gamePlayerID]) return YES;
+    if (localPlayer.playerID.length > 0 && p.player.playerID.length > 0 && [p.player.playerID isEqualToString:localPlayer.playerID]) return YES;
+    if (localPlayer.alias.length > 0 && p.player.alias.length > 0 && [p.player.alias isEqualToString:localPlayer.alias]) return YES;
+    return NO;
 }
 
 RCT_EXPORT_METHOD(startTurnBasedMatchmaker:(NSDictionary *)options
