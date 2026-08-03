@@ -1251,33 +1251,50 @@ RCT_EXPORT_METHOD(quitTurnBasedMatch:(NSString *)matchID
             payloadData = [matchDataString dataUsingEncoding:NSUTF8StringEncoding];
         }
 
-        for (GKTurnBasedParticipant *p in match.participants) {
-            if (pMatchesLocalPlayer(p)) {
-                p.matchOutcome = GKTurnBasedMatchOutcomeQuit;
-            } else if (isParticipantEligibleForTurn(p)) {
-                p.matchOutcome = GKTurnBasedMatchOutcomeWon;
-            }
-        }
-        
         if (match.currentParticipant && pMatchesLocalPlayer(match.currentParticipant)) {
+            // It's the local player's turn to quit/forfeit.
             NSMutableArray<GKTurnBasedParticipant *> *nextParticipants = [NSMutableArray array];
             for (GKTurnBasedParticipant *p in match.participants) {
                 if (!pMatchesLocalPlayer(p) && isParticipantEligibleForTurn(p)) {
                     [nextParticipants addObject:p];
                 }
             }
-            [match participantQuitInTurnWithOutcome:GKTurnBasedMatchOutcomeQuit nextParticipants:nextParticipants turnTimeout:GKTurnTimeoutDefault matchData:payloadData completionHandler:^(NSError * _Nullable error) {
-                if (error) {
-                    reject(@"QUIT_FAILED", error.localizedDescription, error);
+
+            // Set match outcomes for all participants to end the match on forfeit
+            for (GKTurnBasedParticipant *p in match.participants) {
+                if (pMatchesLocalPlayer(p)) {
+                    p.matchOutcome = GKTurnBasedMatchOutcomeQuit;
+                } else if (isParticipantEligibleForTurn(p) || p.matchOutcome == GKTurnBasedMatchOutcomeNone) {
+                    p.matchOutcome = GKTurnBasedMatchOutcomeWon;
+                }
+            }
+
+            [match endMatchInTurnWithMatchData:payloadData completionHandler:^(NSError * _Nullable endErr) {
+                if (endErr) {
+                    NSLog(@"[RNGameCenter:Native] quitTurnBasedMatch endMatchInTurn error: %@, falling back to participantQuitInTurn", endErr.localizedDescription);
+                    [match participantQuitInTurnWithOutcome:GKTurnBasedMatchOutcomeQuit nextParticipants:nextParticipants turnTimeout:GKTurnTimeoutDefault matchData:payloadData completionHandler:^(NSError * _Nullable quitErr) {
+                        if (quitErr) {
+                            reject(@"QUIT_FAILED", quitErr.localizedDescription, quitErr);
+                        } else {
+                            resolve(@YES);
+                        }
+                    }];
                 } else {
+                    NSLog(@"[RNGameCenter:Native] quitTurnBasedMatch endMatchInTurn success for matchID: %@", matchID);
                     resolve(@YES);
                 }
             }];
         } else {
+            // Out-of-turn quit:
+            // CRITICAL: Apple GameKit requires that participant matchOutcome properties must NOT be modified
+            // before calling participantQuitOutOfTurnWithOutcome:. GameKit internally sets local player outcome.
+            NSLog(@"[RNGameCenter:Native] Calling participantQuitOutOfTurnWithOutcome for matchID: %@", matchID);
             [match participantQuitOutOfTurnWithOutcome:GKTurnBasedMatchOutcomeQuit withCompletionHandler:^(NSError * _Nullable error) {
                 if (error) {
+                    NSLog(@"[RNGameCenter:Native] participantQuitOutOfTurn error: %@", error.localizedDescription);
                     reject(@"QUIT_FAILED", error.localizedDescription, error);
                 } else {
+                    NSLog(@"[RNGameCenter:Native] participantQuitOutOfTurn success for matchID: %@", matchID);
                     resolve(@YES);
                 }
             }];
