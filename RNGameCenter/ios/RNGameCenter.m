@@ -1030,6 +1030,20 @@ RCT_EXPORT_METHOD(uploadSavedGameData:(NSDictionary *)options
  Turn-Based Multiplayer Implementation
  -----------------------------------------------------------------------------------------------------------------------------------------*/
 
+static BOOL isParticipantEligibleForTurn(GKTurnBasedParticipant *p) {
+    if (!p) return NO;
+    return p.status != GKTurnBasedParticipantStatusDeclined &&
+           p.status != GKTurnBasedParticipantStatusDone &&
+           p.status != GKTurnBasedParticipantStatusQuit;
+}
+
+static BOOL pMatchesLocalPlayer(GKTurnBasedParticipant *p) {
+    if (!p || !p.player) return NO;
+    GKLocalPlayer *localPlayer = [GKLocalPlayer localPlayer];
+    return (localPlayer.teamPlayerID && [p.player.teamPlayerID isEqualToString:localPlayer.teamPlayerID]) ||
+           (localPlayer.gamePlayerID && [p.player.gamePlayerID isEqualToString:localPlayer.gamePlayerID]);
+}
+
 RCT_EXPORT_METHOD(startTurnBasedMatchmaker:(NSDictionary *)options
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject) {
@@ -1067,11 +1081,7 @@ RCT_EXPORT_METHOD(startTurnBasedMatchmaker:(NSDictionary *)options
             }
 
             GKTurnBasedParticipant *firstParticipant = match.participants.count > 0 ? match.participants[0] : nil;
-            BOOL isHost = YES;
-            if (firstParticipant && firstParticipant.player) {
-                isHost = [firstParticipant.player.teamPlayerID isEqualToString:[GKLocalPlayer localPlayer].teamPlayerID] ||
-                         [firstParticipant.player.gamePlayerID isEqualToString:[GKLocalPlayer localPlayer].gamePlayerID];
-            }
+            BOOL isHost = pMatchesLocalPlayer(firstParticipant);
 
             // If this is a brand-new match created by the host (no matchData yet),
             // submit initial matchData and end turn to next participant to place it into Game Center's auto-match server queue.
@@ -1079,14 +1089,7 @@ RCT_EXPORT_METHOD(startTurnBasedMatchmaker:(NSDictionary *)options
                 NSLog(@"[RNGameCenter:Native] Brand-new match created by host. Submitting initial turn to publish to GameCenter queue...");
                 NSMutableArray<GKTurnBasedParticipant *> *nextParticipants = [NSMutableArray array];
                 for (GKTurnBasedParticipant *p in match.participants) {
-                    if (![p.player.teamPlayerID isEqualToString:[GKLocalPlayer localPlayer].teamPlayerID] &&
-                        ![p.player.gamePlayerID isEqualToString:[GKLocalPlayer localPlayer].gamePlayerID]) {
-                        [nextParticipants addObject:p];
-                    }
-                }
-                for (GKTurnBasedParticipant *p in match.participants) {
-                    if ([p.player.teamPlayerID isEqualToString:[GKLocalPlayer localPlayer].teamPlayerID] ||
-                        [p.player.gamePlayerID isEqualToString:[GKLocalPlayer localPlayer].gamePlayerID]) {
+                    if (isParticipantEligibleForTurn(p) && !pMatchesLocalPlayer(p)) {
                         [nextParticipants addObject:p];
                     }
                 }
@@ -1149,19 +1152,58 @@ RCT_EXPORT_METHOD(endTurnWithNextParticipants:(NSString *)matchID
         
         NSData *matchData = [matchDataString dataUsingEncoding:NSUTF8StringEncoding];
         
-        // Determine next participant
-        NSMutableArray<GKTurnBasedParticipant *> *nextParticipants = [NSMutableArray array];
-        GKTurnBasedParticipant *currentParticipant = nil;
+        // Filter out inactive/quit/done/declined participants
+        NSMutableArray<GKTurnBasedParticipant *> *eligibleParticipants = [NSMutableArray array];
         for (GKTurnBasedParticipant *participant in match.participants) {
-            if ([participant.player.teamPlayerID isEqualToString:[GKLocalPlayer localPlayer].teamPlayerID] ||
-                [participant.player.gamePlayerID isEqualToString:[GKLocalPlayer localPlayer].gamePlayerID]) {
-                currentParticipant = participant;
-            } else {
-                [nextParticipants addObject:participant];
+            if (isParticipantEligibleForTurn(participant)) {
+                [eligibleParticipants addObject:participant];
             }
         }
-        if (currentParticipant) {
-            [nextParticipants addObject:currentParticipant];
+        
+        if (eligibleParticipants.count == 0) {
+            NSLog(@"[RNGameCenter:Native] No eligible participants remain in matchID: %@", matchID);
+            return reject(@"NO_ELIGIBLE_PARTICIPANTS", @"No eligible participants remain in match", nil);
+        }
+        
+        if (eligibleParticipants.count == 1) {
+            // All other participants have quit/done/declined; end match in turn
+            NSLog(@"[RNGameCenter:Native] Only one active participant remains. Ending match in turn for matchID: %@", matchID);
+            [match endMatchInTurnWithMatchData:matchData completionHandler:^(NSError * _Nullable endErr) {
+                if (endErr) {
+                    NSLog(@"[RNGameCenter:Native] endMatchInTurn error: %@", endErr.localizedDescription);
+                    reject(@"END_MATCH_FAILED", endErr.localizedDescription, endErr);
+                } else {
+                    NSLog(@"[RNGameCenter:Native] endMatchInTurn success for matchID: %@", matchID);
+                    resolve(@YES);
+                }
+            }];
+            return;
+        }
+        
+        // Find current participant's index in eligible participants list
+        GKTurnBasedParticipant *currentParticipant = nil;
+        NSUInteger currentIndex = NSNotFound;
+        for (NSUInteger i = 0; i < eligibleParticipants.count; i++) {
+            GKTurnBasedParticipant *p = eligibleParticipants[i];
+            if (pMatchesLocalPlayer(p)) {
+                currentParticipant = p;
+                currentIndex = i;
+                break;
+            }
+        }
+        
+        NSMutableArray<GKTurnBasedParticipant *> *nextParticipants = [NSMutableArray array];
+        if (currentIndex != NSNotFound) {
+            for (NSUInteger i = 1; i < eligibleParticipants.count; i++) {
+                NSUInteger nextIdx = (currentIndex + i) % eligibleParticipants.count;
+                [nextParticipants addObject:eligibleParticipants[nextIdx]];
+            }
+        } else {
+            for (GKTurnBasedParticipant *p in eligibleParticipants) {
+                if (!pMatchesLocalPlayer(p)) {
+                    [nextParticipants addObject:p];
+                }
+            }
         }
         
         [match endTurnWithNextParticipants:nextParticipants turnTimeout:GKTurnTimeoutDefault matchData:matchData completionHandler:^(NSError * _Nullable error) {
@@ -1185,13 +1227,10 @@ RCT_EXPORT_METHOD(quitTurnBasedMatch:(NSString *)matchID
             return reject(@"MATCH_NOT_FOUND", error ? error.localizedDescription : @"Match not found", error);
         }
         
-        if (match.currentParticipant &&
-            ([match.currentParticipant.player.teamPlayerID isEqualToString:[GKLocalPlayer localPlayer].teamPlayerID] ||
-             [match.currentParticipant.player.gamePlayerID isEqualToString:[GKLocalPlayer localPlayer].gamePlayerID])) {
-            
+        if (match.currentParticipant && pMatchesLocalPlayer(match.currentParticipant)) {
             NSMutableArray<GKTurnBasedParticipant *> *nextParticipants = [NSMutableArray array];
             for (GKTurnBasedParticipant *p in match.participants) {
-                if (![p.player.teamPlayerID isEqualToString:[GKLocalPlayer localPlayer].teamPlayerID]) {
+                if (!pMatchesLocalPlayer(p) && isParticipantEligibleForTurn(p)) {
                     [nextParticipants addObject:p];
                 }
             }
@@ -1221,21 +1260,15 @@ RCT_EXPORT_METHOD(quitTurnBasedMatch:(NSString *)matchID
     }
     
     NSString *currentTurnPlayerId = match.currentParticipant.player.teamPlayerID ?: match.currentParticipant.player.gamePlayerID ?: @"";
-    BOOL isMyTurn = [currentTurnPlayerId isEqualToString:[GKLocalPlayer localPlayer].teamPlayerID] ||
-                    [currentTurnPlayerId isEqualToString:[GKLocalPlayer localPlayer].gamePlayerID];
+    BOOL isMyTurn = pMatchesLocalPlayer(match.currentParticipant);
                     
     GKTurnBasedParticipant *firstParticipant = match.participants.count > 0 ? match.participants[0] : nil;
-    BOOL isHost = YES;
-    if (firstParticipant && firstParticipant.player) {
-        isHost = [firstParticipant.player.teamPlayerID isEqualToString:[GKLocalPlayer localPlayer].teamPlayerID] ||
-                 [firstParticipant.player.gamePlayerID isEqualToString:[GKLocalPlayer localPlayer].gamePlayerID];
-    }
+    BOOL isHost = pMatchesLocalPlayer(firstParticipant);
 
     NSString *opponentName = @"Opponent";
     for (GKTurnBasedParticipant *p in match.participants) {
-        if (![p.player.teamPlayerID isEqualToString:[GKLocalPlayer localPlayer].teamPlayerID] &&
-            ![p.player.gamePlayerID isEqualToString:[GKLocalPlayer localPlayer].gamePlayerID]) {
-            if (p.player.displayName) {
+        if (!pMatchesLocalPlayer(p)) {
+            if (p.player && p.player.displayName) {
                 opponentName = p.player.displayName;
             }
             break;
