@@ -1167,6 +1167,21 @@ RCT_EXPORT_METHOD(endTurnWithNextParticipants:(NSString *)matchID
         if (eligibleParticipants.count == 1) {
             // All other participants have quit/done/declined; end match in turn
             NSLog(@"[RNGameCenter:Native] Only one active participant remains. Ending match in turn for matchID: %@", matchID);
+            
+            // GameKit requires matchOutcome to be set on ALL participants before ending
+            for (GKTurnBasedParticipant *p in match.participants) {
+                if (pMatchesLocalPlayer(p)) {
+                    p.matchOutcome = GKTurnBasedMatchOutcomeWon;
+                    NSLog(@"[RNGameCenter:Native] Set matchOutcome=Won for local player");
+                } else if (p.status == GKTurnBasedParticipantStatusDeclined) {
+                    p.matchOutcome = GKTurnBasedMatchOutcomeQuit;
+                    NSLog(@"[RNGameCenter:Native] Set matchOutcome=Quit for declined participant");
+                } else if (p.matchOutcome == GKTurnBasedMatchOutcomeNone) {
+                    p.matchOutcome = GKTurnBasedMatchOutcomeLost;
+                    NSLog(@"[RNGameCenter:Native] Set matchOutcome=Lost for inactive participant");
+                }
+            }
+            
             [match endMatchInTurnWithMatchData:matchData completionHandler:^(NSError * _Nullable endErr) {
                 if (endErr) {
                     NSLog(@"[RNGameCenter:Native] endMatchInTurn error: %@", endErr.localizedDescription);
