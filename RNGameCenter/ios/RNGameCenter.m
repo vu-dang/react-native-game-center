@@ -1328,7 +1328,7 @@ RCT_EXPORT_METHOD(quitTurnBasedMatch:(NSString *)matchID
         }
 
         if (p.player != nil || p.status == GKTurnBasedParticipantStatusActive || p.status == GKTurnBasedParticipantStatusDone) {
-            if (p.status != GKTurnBasedParticipantStatusMatching && p.status != GKTurnBasedParticipantStatusNotInvitedYet) {
+            if (p.status != GKTurnBasedParticipantStatusMatching) {
                 activePlayerCount++;
             }
         }
