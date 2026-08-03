@@ -1298,17 +1298,22 @@ RCT_EXPORT_METHOD(quitTurnBasedMatch:(NSString *)matchID
     BOOL isHost = pMatchesLocalPlayer(firstParticipant);
 
     NSString *opponentName = @"Opponent";
+    GKTurnBasedParticipant *localParticipant = nil;
     for (GKTurnBasedParticipant *p in match.participants) {
-        if (!pMatchesLocalPlayer(p)) {
+        if (pMatchesLocalPlayer(p)) {
+            localParticipant = p;
+        } else {
             if (p.player && p.player.displayName) {
                 opponentName = p.player.displayName;
             }
-            break;
         }
     }
 
-    NSLog(@"[RNGameCenter:Native] Dict matchID=%@, status=%ld, isMyTurn=%d, isHost=%d, opponent=%@, participantsCount=%lu",
-          match.matchID, (long)match.status, isMyTurn, isHost, opponentName, (unsigned long)match.participants.count);
+    NSInteger localParticipantStatus = localParticipant ? localParticipant.status : GKTurnBasedParticipantStatusUnknown;
+    NSInteger localMatchOutcome = localParticipant ? localParticipant.matchOutcome : GKTurnBasedMatchOutcomeNone;
+
+    NSLog(@"[RNGameCenter:Native] Dict matchID=%@, status=%ld, localStatus=%ld, localOutcome=%ld, isMyTurn=%d, isHost=%d, opponent=%@, participantsCount=%lu",
+          match.matchID, (long)match.status, (long)localParticipantStatus, (long)localMatchOutcome, isMyTurn, isHost, opponentName, (unsigned long)match.participants.count);
     
     return @{
         @"matchID": match.matchID ?: @"",
@@ -1316,6 +1321,8 @@ RCT_EXPORT_METHOD(quitTurnBasedMatch:(NSString *)matchID
         @"isMyTurn": @(isMyTurn),
         @"isHost": @(isHost),
         @"status": @(match.status),
+        @"localParticipantStatus": @(localParticipantStatus),
+        @"localMatchOutcome": @(localMatchOutcome),
         @"opponentName": opponentName,
         @"currentTurnPlayerId": currentTurnPlayerId
     };
