@@ -1364,6 +1364,7 @@ RCT_EXPORT_METHOD(endTurnBasedMatch:(NSString *)matchID
 
     NSString *opponentName = @"Opponent";
     GKTurnBasedParticipant *localParticipant = nil;
+    GKTurnBasedParticipant *opponentParticipant = nil;
     NSInteger activePlayerCount = 0;
 
     for (GKTurnBasedParticipant *p in match.participants) {
@@ -1372,6 +1373,9 @@ RCT_EXPORT_METHOD(endTurnBasedMatch:(NSString *)matchID
         } else {
             if (p.player && p.player.displayName) {
                 opponentName = p.player.displayName;
+            }
+            if (!opponentParticipant) {
+                opponentParticipant = p;
             }
         }
 
@@ -1390,9 +1394,11 @@ RCT_EXPORT_METHOD(endTurnBasedMatch:(NSString *)matchID
 
     NSInteger localParticipantStatus = localParticipant ? localParticipant.status : GKTurnBasedParticipantStatusUnknown;
     NSInteger localMatchOutcome = localParticipant ? localParticipant.matchOutcome : GKTurnBasedMatchOutcomeNone;
+    NSInteger opponentParticipantStatus = opponentParticipant ? opponentParticipant.status : GKTurnBasedParticipantStatusUnknown;
+    NSInteger opponentMatchOutcome = opponentParticipant ? opponentParticipant.matchOutcome : GKTurnBasedMatchOutcomeNone;
 
-    NSLog(@"[RNGameCenter:Native] Dict matchID=%@, status=%ld, localStatus=%ld, localOutcome=%ld, isMyTurn=%d, isHost=%d, opponent=%@, activePlayerCount=%ld, hasJoined=%d, participantsCount=%lu",
-          match.matchID, (long)match.status, (long)localParticipantStatus, (long)localMatchOutcome, isMyTurn, isHost, opponentName, (long)activePlayerCount, hasOpponentJoined, (unsigned long)match.participants.count);
+    NSLog(@"[RNGameCenter:Native] Dict matchID=%@, status=%ld, localStatus=%ld, localOutcome=%ld, opponentStatus=%ld, isMyTurn=%d, isHost=%d, opponent=%@, activePlayerCount=%ld, hasJoined=%d, participantsCount=%lu",
+          match.matchID, (long)match.status, (long)localParticipantStatus, (long)localMatchOutcome, (long)opponentParticipantStatus, isMyTurn, isHost, opponentName, (long)activePlayerCount, hasOpponentJoined, (unsigned long)match.participants.count);
     
     return @{
         @"matchID": match.matchID ?: @"",
@@ -1402,6 +1408,8 @@ RCT_EXPORT_METHOD(endTurnBasedMatch:(NSString *)matchID
         @"status": @(match.status),
         @"localParticipantStatus": @(localParticipantStatus),
         @"localMatchOutcome": @(localMatchOutcome),
+        @"opponentParticipantStatus": @(opponentParticipantStatus),
+        @"opponentMatchOutcome": @(opponentMatchOutcome),
         @"opponentName": opponentName,
         @"activePlayerCount": @(activePlayerCount),
         @"hasOpponentJoined": @(hasOpponentJoined),
