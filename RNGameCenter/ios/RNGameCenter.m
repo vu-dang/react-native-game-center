@@ -1034,9 +1034,11 @@ RCT_EXPORT_METHOD(startTurnBasedMatchmaker:(NSDictionary *)options
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject) {
     if (![GKLocalPlayer localPlayer].isAuthenticated) {
+        NSLog(@"[RNGameCenter:Native] startTurnBasedMatchmaker rejected: user not authenticated");
         return reject(@"NOT_AUTHENTICATED", @"GameCenter user is not authenticated", nil);
     }
     
+    NSLog(@"[RNGameCenter:Native] startTurnBasedMatchmaker starting with options: %@", options);
     GKMatchRequest *request = [[GKMatchRequest alloc] init];
     request.minPlayers = options[@"minPlayers"] ? [options[@"minPlayers"] unsignedIntegerValue] : 2;
     request.maxPlayers = options[@"maxPlayers"] ? [options[@"maxPlayers"] unsignedIntegerValue] : 2;
@@ -1044,25 +1046,88 @@ RCT_EXPORT_METHOD(startTurnBasedMatchmaker:(NSDictionary *)options
         request.playerGroup = [options[@"playerGroup"] unsignedIntegerValue];
     }
 
-    GKTurnBasedMatchmakerViewController *mmvc = [[GKTurnBasedMatchmakerViewController alloc] initWithMatchRequest:request];
-    mmvc.turnBasedMatchmakerDelegate = self;
-    
-    UIViewController *rootVC = [self getRootViewController];
-    [rootVC presentViewController:mmvc animated:YES completion:nil];
-    resolve(@YES);
+    BOOL showUI = options[@"showUI"] ? [options[@"showUI"] boolValue] : NO;
+    if (showUI) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            GKTurnBasedMatchmakerViewController *mmvc = [[GKTurnBasedMatchmakerViewController alloc] initWithMatchRequest:request];
+            mmvc.turnBasedMatchmakerDelegate = self;
+            UIViewController *rootVC = [self getRootViewController];
+            [rootVC presentViewController:mmvc animated:YES completion:nil];
+        });
+        resolve(@YES);
+    } else {
+        [GKTurnBasedMatch findMatchForRequest:request withCompletionHandler:^(GKTurnBasedMatch *match, NSError *error) {
+            if (error) {
+                NSLog(@"[RNGameCenter:Native] findMatchForRequest error: %@", error.localizedDescription);
+                return reject(@"MATCHMAKING_FAILED", error.localizedDescription, error);
+            }
+            NSLog(@"[RNGameCenter:Native] findMatchForRequest success, matchID: %@", match ? match.matchID : @"nil");
+            if (!match) {
+                return reject(@"MATCHMAKING_FAILED", @"No match returned", nil);
+            }
+
+            GKTurnBasedParticipant *firstParticipant = match.participants.count > 0 ? match.participants[0] : nil;
+            BOOL isHost = YES;
+            if (firstParticipant && firstParticipant.player) {
+                isHost = [firstParticipant.player.teamPlayerID isEqualToString:[GKLocalPlayer localPlayer].teamPlayerID] ||
+                         [firstParticipant.player.gamePlayerID isEqualToString:[GKLocalPlayer localPlayer].gamePlayerID];
+            }
+
+            // If this is a brand-new match created by the host (no matchData yet),
+            // submit initial matchData and end turn to next participant to place it into Game Center's auto-match server queue.
+            if ((!match.matchData || match.matchData.length == 0) && isHost) {
+                NSLog(@"[RNGameCenter:Native] Brand-new match created by host. Submitting initial turn to publish to GameCenter queue...");
+                NSMutableArray<GKTurnBasedParticipant *> *nextParticipants = [NSMutableArray array];
+                for (GKTurnBasedParticipant *p in match.participants) {
+                    if (![p.player.teamPlayerID isEqualToString:[GKLocalPlayer localPlayer].teamPlayerID] &&
+                        ![p.player.gamePlayerID isEqualToString:[GKLocalPlayer localPlayer].gamePlayerID]) {
+                        [nextParticipants addObject:p];
+                    }
+                }
+                for (GKTurnBasedParticipant *p in match.participants) {
+                    if ([p.player.teamPlayerID isEqualToString:[GKLocalPlayer localPlayer].teamPlayerID] ||
+                        [p.player.gamePlayerID isEqualToString:[GKLocalPlayer localPlayer].gamePlayerID]) {
+                        [nextParticipants addObject:p];
+                    }
+                }
+                
+                NSString *initialPacketJson = options[@"initialMatchData"] ?: @"{\"type\":\"INITIAL\",\"fen\":\"rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1\"}";
+                NSData *initialData = [initialPacketJson dataUsingEncoding:NSUTF8StringEncoding];
+                
+                [match endTurnWithNextParticipants:nextParticipants turnTimeout:GKTurnTimeoutDefault matchData:initialData completionHandler:^(NSError * _Nullable endTurnErr) {
+                    if (endTurnErr) {
+                        NSLog(@"[RNGameCenter:Native] Initial endTurn error: %@", endTurnErr.localizedDescription);
+                    } else {
+                        NSLog(@"[RNGameCenter:Native] Initial match successfully published to GameCenter queue!");
+                    }
+                    NSDictionary *payload = [self dictionaryFromTurnBasedMatch:match];
+                    [self emit:@"gc:turnEvent" body:payload];
+                    resolve(payload);
+                }];
+            } else {
+                NSDictionary *payload = [self dictionaryFromTurnBasedMatch:match];
+                [self emit:@"gc:turnEvent" body:payload];
+                resolve(payload);
+            }
+        }];
+    }
 }
 
 RCT_EXPORT_METHOD(loadTurnBasedMatches:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject) {
     if (![GKLocalPlayer localPlayer].isAuthenticated) {
+        NSLog(@"[RNGameCenter:Native] loadTurnBasedMatches rejected: user not authenticated");
         return reject(@"NOT_AUTHENTICATED", @"GameCenter user is not authenticated", nil);
     }
     
+    NSLog(@"[RNGameCenter:Native] loadTurnBasedMatches called for localPlayer: %@", [GKLocalPlayer localPlayer].alias);
     [GKTurnBasedMatch loadMatchesWithCompletionHandler:^(NSArray<GKTurnBasedMatch *> *matches, NSError *error) {
         if (error) {
+            NSLog(@"[RNGameCenter:Native] loadTurnBasedMatches failed: %@", error.localizedDescription);
             return reject(@"LOAD_ERROR", error.localizedDescription, error);
         }
         
+        NSLog(@"[RNGameCenter:Native] loadMatches returned %lu raw matches from GameCenter", (unsigned long)matches.count);
         NSMutableArray *result = [NSMutableArray array];
         for (GKTurnBasedMatch *match in matches) {
             [result addObject:[self dictionaryFromTurnBasedMatch:match]];
@@ -1075,8 +1140,10 @@ RCT_EXPORT_METHOD(endTurnWithNextParticipants:(NSString *)matchID
                   matchDataString:(NSString *)matchDataString
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject) {
+    NSLog(@"[RNGameCenter:Native] endTurnWithNextParticipants for matchID: %@", matchID);
     [GKTurnBasedMatch loadMatchWithID:matchID withCompletionHandler:^(GKTurnBasedMatch *match, NSError *error) {
         if (error || !match) {
+            NSLog(@"[RNGameCenter:Native] endTurn failed to load matchID %@: %@", matchID, error ? error.localizedDescription : @"Match not found");
             return reject(@"MATCH_NOT_FOUND", error ? error.localizedDescription : @"Match not found", error);
         }
         
@@ -1099,8 +1166,10 @@ RCT_EXPORT_METHOD(endTurnWithNextParticipants:(NSString *)matchID
         
         [match endTurnWithNextParticipants:nextParticipants turnTimeout:GKTurnTimeoutDefault matchData:matchData completionHandler:^(NSError * _Nullable error) {
             if (error) {
+                NSLog(@"[RNGameCenter:Native] endTurn error: %@", error.localizedDescription);
                 reject(@"END_TURN_FAILED", error.localizedDescription, error);
             } else {
+                NSLog(@"[RNGameCenter:Native] endTurn success for matchID: %@", matchID);
                 resolve(@YES);
             }
         }];
@@ -1110,6 +1179,7 @@ RCT_EXPORT_METHOD(endTurnWithNextParticipants:(NSString *)matchID
 RCT_EXPORT_METHOD(quitTurnBasedMatch:(NSString *)matchID
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject) {
+    NSLog(@"[RNGameCenter:Native] quitTurnBasedMatch for matchID: %@", matchID);
     [GKTurnBasedMatch loadMatchWithID:matchID withCompletionHandler:^(GKTurnBasedMatch *match, NSError *error) {
         if (error || !match) {
             return reject(@"MATCH_NOT_FOUND", error ? error.localizedDescription : @"Match not found", error);
@@ -1154,6 +1224,13 @@ RCT_EXPORT_METHOD(quitTurnBasedMatch:(NSString *)matchID
     BOOL isMyTurn = [currentTurnPlayerId isEqualToString:[GKLocalPlayer localPlayer].teamPlayerID] ||
                     [currentTurnPlayerId isEqualToString:[GKLocalPlayer localPlayer].gamePlayerID];
                     
+    GKTurnBasedParticipant *firstParticipant = match.participants.count > 0 ? match.participants[0] : nil;
+    BOOL isHost = YES;
+    if (firstParticipant && firstParticipant.player) {
+        isHost = [firstParticipant.player.teamPlayerID isEqualToString:[GKLocalPlayer localPlayer].teamPlayerID] ||
+                 [firstParticipant.player.gamePlayerID isEqualToString:[GKLocalPlayer localPlayer].gamePlayerID];
+    }
+
     NSString *opponentName = @"Opponent";
     for (GKTurnBasedParticipant *p in match.participants) {
         if (![p.player.teamPlayerID isEqualToString:[GKLocalPlayer localPlayer].teamPlayerID] &&
@@ -1164,11 +1241,15 @@ RCT_EXPORT_METHOD(quitTurnBasedMatch:(NSString *)matchID
             break;
         }
     }
+
+    NSLog(@"[RNGameCenter:Native] Dict matchID=%@, status=%ld, isMyTurn=%d, isHost=%d, opponent=%@, participantsCount=%lu",
+          match.matchID, (long)match.status, isMyTurn, isHost, opponentName, (unsigned long)match.participants.count);
     
     return @{
         @"matchID": match.matchID ?: @"",
         @"matchData": matchDataStr,
         @"isMyTurn": @(isMyTurn),
+        @"isHost": @(isHost),
         @"status": @(match.status),
         @"opponentName": opponentName,
         @"currentTurnPlayerId": currentTurnPlayerId
@@ -1178,10 +1259,12 @@ RCT_EXPORT_METHOD(quitTurnBasedMatch:(NSString *)matchID
 #pragma mark - GKTurnBasedMatchmakerViewControllerDelegate
 
 - (void)turnBasedMatchmakerViewControllerWasCancelled:(GKTurnBasedMatchmakerViewController *)viewController {
+    NSLog(@"[RNGameCenter:Native] turnBasedMatchmakerViewControllerWasCancelled");
     [viewController dismissViewControllerAnimated:YES completion:nil];
 }
 
 - (void)turnBasedMatchmakerViewController:(GKTurnBasedMatchmakerViewController *)viewController didFailWithError:(NSError *)error {
+    NSLog(@"[RNGameCenter:Native] turnBasedMatchmakerViewController didFailWithError: %@", error.localizedDescription);
     [viewController dismissViewControllerAnimated:YES completion:nil];
     [self emit:@"gc:matchError" body:@{@"error": error.localizedDescription}];
 }
@@ -1189,11 +1272,13 @@ RCT_EXPORT_METHOD(quitTurnBasedMatch:(NSString *)matchID
 #pragma mark - GKTurnBasedEventListener
 
 - (void)player:(GKPlayer *)player receivedTurnEventForMatch:(GKTurnBasedMatch *)match didBecomeActive:(BOOL)didBecomeActive {
+    NSLog(@"[RNGameCenter:Native] receivedTurnEventForMatch: %@, didBecomeActive: %d", match.matchID, didBecomeActive);
     NSDictionary *matchDict = [self dictionaryFromTurnBasedMatch:match];
     [self emit:@"gc:turnEvent" body:matchDict];
 }
 
 - (void)player:(GKPlayer *)player matchEnded:(GKTurnBasedMatch *)match {
+    NSLog(@"[RNGameCenter:Native] player matchEnded: %@", match.matchID);
     NSDictionary *matchDict = [self dictionaryFromTurnBasedMatch:match];
     [self emit:@"gc:matchEnded" body:matchDict];
 }
